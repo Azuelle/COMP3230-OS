@@ -25,6 +25,7 @@
 #define SYSCALL_FLAG 0  // flags used in syscall, set it to default 0
 
 #include <errno.h>  // for reading errno
+#include <fcntl.h>  // for fcntl
 
 #define DEBUG 0
 
@@ -261,6 +262,26 @@ int main(int argc, char* argv[]) {
 
     // Main loop
     while (!finished) {
+        // Clear stdin
+        int fd = fileno(stdin);
+        if (fd == -1) {
+            perror("fileno failed");
+            kill(inference_pid, SIGINT);
+            exit(EXIT_FAILURE);
+        }
+        int file_flags = fcntl(fd, F_GETFL);
+        if (file_flags < 0 || fcntl(fd, F_SETFL, file_flags | O_NONBLOCK) < 0) {
+            perror("fcntl failed");
+            kill(inference_pid, SIGINT);
+            exit(EXIT_FAILURE);
+        }
+        while (getchar() != EOF);
+        if (fcntl(fd, F_SETFL, file_flags) < 0) {
+            perror("fcntl failed");
+            kill(inference_pid, SIGINT);
+            exit(EXIT_FAILURE);
+        }
+
         // Read prompt from user
         char prompt[MAX_PROMPT_LEN];
         printf(">>> ");

@@ -117,17 +117,15 @@ int main(int argc, char* argv[]) {
     // Main loop
     while (1) {
         // Wait for response to finish
-        if (!inference_ready) continue;
+        if (!inference_ready) {
+            sched_yield();
+            continue;
+        }
         // READY
         !DEBUG ?: puts("[MAIN] GOT INF READY");
         inference_ready = 0;
         // Read prompt from user
         char prompt[MAX_PROMPT_LEN];
-        if (fflush(stdin) == EOF) {
-            perror("fflush failed");
-            kill(inference_pid, SIGINT);
-            exit(EXIT_FAILURE);
-        }
         printf(">>> ");
         if (fgets(prompt, MAX_PROMPT_LEN, stdin) == NULL) {
             perror("fgets failed");

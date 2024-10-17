@@ -189,8 +189,10 @@ int main(int argc, char *argv[]) {
         !DEBUG ?: puts("[INF] SENT INF READY");
 
         // Wait for new prompt
-        while (1)
+        while (1) {
             if (new_prompt_ready) break;
+            sched_yield();
+        }
         !DEBUG ?: puts("[INF] GOT MAIN READY");
         new_prompt_ready = 0;
     }

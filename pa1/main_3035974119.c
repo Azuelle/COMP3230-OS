@@ -1,11 +1,10 @@
 /*
- * PLEASE WRITE DOWN FOLLOWING INFO BEFORE SUBMISSION
  * FILE NAME: main_3035974119.c
  * NAME: TANG Jiakai
  * UID: 3035974119
  * Development Platform: Ubuntu 22.04.4 LTS aarch64
  *                       (in Docker container on macOS)
- * Remark: (How much you implemented?)
+ * Remark: (How much you implemented?) Everything required
  * How to compile separately: gcc -o main main_3035974119.c
  */
 

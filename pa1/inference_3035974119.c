@@ -1,22 +1,12 @@
 /*
-Please download the model and tokenizer to the same folder:
-$ wget -O model.bin
-https://huggingface.co/huangs0/llama2.c/resolve/main/model.bin $ wget -O
-tokenizer.bin https://huggingface.co/huangs0/llama2.c/resolve/main/tokenizer.bin
-or with Makefile (recommended)
-$ make prepare
-
-Compile it with Level-3 Optimization and link math library (-lm, Linux built-in)
-$ gcc -o inference inference_[UID].c -O3 -lm
-or with Makefile (recommended)
-$ make -B inference
-
-Then run it with:
-./inference <seed> <prompt1> <prompt2>
-Example:
-./inference 42 "What is Fibonacci Number?" "Can you give me a python program to
-generate Fibonacci Number?" Note: <prompt> must be quoted with ""
-*/
+ * FILE NAME: main_3035974119.c
+ * NAME: TANG Jiakai
+ * UID: 3035974119
+ * Development Platform: Ubuntu 22.04.4 LTS aarch64
+ *                       (in Docker container on macOS)
+ * Remark: (How much you implemented?) Everything required
+ * How to compile separately: gcc -o main main_3035974119.c
+ */
 
 #include "common.h"  // common headers
 

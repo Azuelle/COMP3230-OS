@@ -24,19 +24,22 @@
 #define WRITE_END 1     // helper macro to make pipe end clear
 #define SYSCALL_FLAG 0  // flags used in syscall, set it to default 0
 
-int inference_pid = -1;
+#define DEBUG 0
+
+int inference_pid = -1;   // pid of inference process
+int inference_ready = 1;  // 0 if not ready, 1 if ready, set with SIGUSR1
 
 // Kill inference process when SIGINT is received
 void handle_sigint(int signum) {
     kill(inference_pid, SIGINT);
     int status;
-    waitpid(inference_pid, &status, 0);
-    printf("Inference process exited with code %d.\n", status);
+    waitpid(inference_pid, &status, SYSCALL_FLAG);
+    printf("Child exited with %d\n", status);
     exit(EXIT_SUCCESS);
 }
 
 // Start new prompt input when SIGUSR1 is received
-void handle_sigusr1(int signum) {}
+void handle_sigusr1(int signum) { inference_ready = 1; }
 
 int main(int argc, char* argv[]) {
     char* seed;  //
@@ -67,7 +70,10 @@ int main(int argc, char* argv[]) {
         // CHILD PROCESS
 
         // Redirect to stdin
-        close(pipefd[WRITE_END]);
+        if (close(pipefd[WRITE_END]) == -1) {
+            perror("close failed");
+            exit(EXIT_FAILURE);
+        }
         if (dup2(pipefd[READ_END], STDIN_FILENO) == -1) {
             perror("dup2 failed");
             exit(EXIT_FAILURE);
@@ -82,18 +88,79 @@ int main(int argc, char* argv[]) {
     // PARENT PROCESS
 
     // Close unused pipe end
-    close(pipefd[READ_END]);
+    if (close(pipefd[READ_END]) == -1) {
+        perror("close failed");
+        kill(inference_pid, SIGINT);
+        exit(EXIT_FAILURE);
+    }
+
+    // Open write end of pipe
+    FILE* pipe_w = fdopen(pipefd[WRITE_END], "w");
+    if (pipe_w == NULL) {
+        perror("fdopen failed");
+        kill(inference_pid, SIGINT);
+        exit(EXIT_FAILURE);
+    }
 
     // Define signal handlers
-    signal(SIGINT, handle_sigint);
-    signal(SIGUSR1, handle_sigusr1);
+    if (signal(SIGINT, handle_sigint) == SIG_ERR) {
+        perror("signal SIGINT failed");
+        kill(inference_pid, SIGINT);
+        exit(EXIT_FAILURE);
+    }
+    if (signal(SIGUSR1, handle_sigusr1) == SIG_ERR) {
+        perror("signal SIGUSR1 failed");
+        kill(inference_pid, SIGINT);
+        exit(EXIT_FAILURE);
+    }
 
     // Main loop
     while (1) {
+        // Wait for response to finish
+        if (!inference_ready) continue;
+        // READY
+        !DEBUG ?: puts("[MAIN] GOT INF READY");
+        inference_ready = 0;
+        // Read prompt from user
+        char prompt[MAX_PROMPT_LEN];
+        if (fflush(stdin) == EOF) {
+            perror("fflush failed");
+            kill(inference_pid, SIGINT);
+            exit(EXIT_FAILURE);
+        }
+        printf(">>> ");
+        if (fgets(prompt, MAX_PROMPT_LEN, stdin) == NULL) {
+            perror("fgets failed");
+            kill(inference_pid, SIGINT);
+            exit(EXIT_FAILURE);
+        }
+
+        // Send prompt to inference process
+        if (fputs(prompt, pipe_w) == EOF) {
+            perror("fputs failed");
+            kill(inference_pid, SIGINT);
+            exit(EXIT_FAILURE);
+        }
+        if (fflush(pipe_w) == EOF) {
+            perror("fflush failed");
+            kill(inference_pid, SIGINT);
+            exit(EXIT_FAILURE);
+        }
+        kill(inference_pid, SIGUSR1);  // Notify inference process
+        !DEBUG ?: puts("[MAIN] SENT PROMPT");
     }
 
     // Clean up
-    close(pipefd[WRITE_END]);
+    if (fclose(pipe_w) == EOF) {
+        perror("fclose failed");
+        kill(inference_pid, SIGINT);
+        exit(EXIT_FAILURE);
+    }
+    if (close(pipefd[WRITE_END]) == -1) {
+        perror("close failed");
+        kill(inference_pid, SIGINT);
+        exit(EXIT_FAILURE);
+    }
 
     return EXIT_SUCCESS;
 }

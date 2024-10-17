@@ -39,6 +39,22 @@ Sampler sampler;          // sampler instance to be init
 
 #define MAX_PROMPT_COUNT 4
 
+#define DEBUG 0
+
+int new_prompt_ready = 0;  // 0 if not ready, 1 if ready, set with SIGUSR1
+int prompt_count = 0;      // Number of finished prompts
+
+// Clean up when SIGINT is received
+void handle_sigint(int signum) {
+    free_sampler(&sampler);
+    free_tokenizer(&tokenizer);
+    free_transformer(&transformer);
+    exit(EXIT_SUCCESS);
+}
+
+// Start reading prompt when SIGUSR1 is received (user finished input)
+void handle_sigusr1(int signum) { new_prompt_ready = 1; }
+
 // Your Code Ends Here
 
 // ----------------------------------------------------------------------------
@@ -123,6 +139,8 @@ int main(int argc, char *argv[]) {
     // parse command-line parameters via argv, you'll need to change this to
     // read stdin
     // Your Code Starts Here
+
+    // Verify arguments
     if (argc == 2) {
         rng_seed = atoi(argv[1]);
     } else if (argc == 1) {
@@ -139,6 +157,11 @@ int main(int argc, char *argv[]) {
             "Note:  this shall not be called directly, use ./entry <seed> \n");
         exit(EXIT_FAILURE);
     }
+
+    // Define handlers
+    signal(SIGINT, handle_sigint);
+    signal(SIGUSR1, handle_sigusr1);
+
     // Your Code Ends Here
 
     // parameter validation/overrides
@@ -153,17 +176,27 @@ int main(int argc, char *argv[]) {
 
     // Generation Loop, update to match requirements
     // Your code starts here
-    int prompt_count = 0;
+
     prompts[0] = (char *)malloc(MAX_PROMPT_LEN * sizeof(char));
     while (fgets(prompts[prompt_count], MAX_PROMPT_LEN, stdin)) {
-        prompt_count++;
-        // printf("user\n %s \n", prompts[i]);
-        generate(prompts[prompt_count - 1]);
-        prompts[prompt_count] = (char *)malloc(MAX_PROMPT_LEN * sizeof(char));
+        generate(prompts[prompt_count]);
 
+        // Prepare for next prompt
+        prompt_count++;
         if (prompt_count == MAX_PROMPT_COUNT) break;
+        prompts[prompt_count] = (char *)malloc(MAX_PROMPT_LEN * sizeof(char));
+        kill(getppid(), SIGUSR1);  // Notify main process
+        !DEBUG ?: puts("[INF] SENT INF READY");
+
+        // Wait for new prompt
+        while (1)
+            if (new_prompt_ready) break;
+        !DEBUG ?: puts("[INF] GOT MAIN READY");
+        new_prompt_ready = 0;
     }
     for (int i = 0; i < prompt_count; i++) free(prompts[i]);
+    kill(getppid(), SIGINT);
+
     // Your code ends here
 
     // memory and file handles cleanup

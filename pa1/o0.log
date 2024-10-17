@@ -1,0 +1,8 @@
+[pid] 66799 [tcomm] (inference) [state] R [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 11 [stime] 12 [cpu%] 46.67%
+[pid] 66799 [tcomm] (inference) [state] R [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 41 [stime] 12 [cpu%] 100.00%
+[pid] 66799 [tcomm] (inference) [state] R [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 71 [stime] 12 [cpu%] 100.00%
+[pid] 66799 [tcomm] (inference) [state] R [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 101 [stime] 12 [cpu%] 100.00%
+[pid] 66799 [tcomm] (inference) [state] R [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 131 [stime] 12 [cpu%] 100.00%
+[pid] 66799 [tcomm] (inference) [state] R [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 161 [stime] 12 [cpu%] 100.00%
+[pid] 66799 [tcomm] (inference) [state] R [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 192 [stime] 12 [cpu%] 103.33%
+[pid] 66799 [tcomm] (inference) [state] S [policy] SCHED_OTHER [nice] 0 [vsize] 357154816 [task_cpu] 6 [utime] 218 [stime] 12 [cpu%] 86.67%

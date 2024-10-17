@@ -35,25 +35,27 @@ Sampler sampler;          // sampler instance to be init
 
 // Define Additional Global Variables and Signal Handlers Here
 // Your Code Starts Here
+
 #include <signal.h>  // for handler and kill
 
 #define MAX_PROMPT_COUNT 4
 
 #define DEBUG 0
 
-int new_prompt_ready = 0;  // 0 if not ready, 1 if ready, set with SIGUSR1
-int prompt_count = 0;      // Number of finished prompts
+int prompt_count = 0;  // Number of finished prompts
 
-// Clean up when SIGINT is received
-void handle_sigint(int signum) {
+// Memory and file handles cleanup
+void cleanup() {
     free_sampler(&sampler);
     free_tokenizer(&tokenizer);
     free_transformer(&transformer);
-    exit(EXIT_SUCCESS);
 }
 
-// Start reading prompt when SIGUSR1 is received (user finished input)
-void handle_sigusr1(int signum) { new_prompt_ready = 1; }
+// Clean up when SIGINT is received
+void handle_sigint(int signum) {
+    cleanup();
+    exit(EXIT_SUCCESS);
+}
 
 // Your Code Ends Here
 
@@ -132,8 +134,8 @@ int main(int argc, char *argv[]) {
         0.6f;  // 0.0 = greedy deterministic. 1.0 = original. don't set higher
     float topp = 0.9f;  // top-p in nucleus sampling. 1.0 = off. 0.9 works well,
                         // but slower
-    char *prompts[4] = {NULL, NULL, NULL, NULL};  // prompt strings
-    int num_prompt = 0;                           // number of prompts
+    char *prompt = NULL;    // prompt string
+    int num_prompt = 0;     // number of prompts
     uint64_t rng_seed = 0;  // seed rng with time by default
 
     // parse command-line parameters via argv, you'll need to change this to
@@ -160,7 +162,6 @@ int main(int argc, char *argv[]) {
 
     // Define handlers
     signal(SIGINT, handle_sigint);
-    signal(SIGUSR1, handle_sigusr1);
 
     // Your Code Ends Here
 
@@ -177,33 +178,23 @@ int main(int argc, char *argv[]) {
     // Generation Loop, update to match requirements
     // Your code starts here
 
-    prompts[0] = (char *)malloc(MAX_PROMPT_LEN * sizeof(char));
-    while (fgets(prompts[prompt_count], MAX_PROMPT_LEN, stdin)) {
-        generate(prompts[prompt_count]);
+    prompt = (char *)malloc(MAX_PROMPT_LEN * sizeof(char));
+    while (fgets(prompt, MAX_PROMPT_LEN, stdin)) {
+        !DEBUG ?: puts("[INF] RECV PROMPT");
+        generate(prompt);
 
         // Prepare for next prompt
         prompt_count++;
         if (prompt_count == MAX_PROMPT_COUNT) break;
-        prompts[prompt_count] = (char *)malloc(MAX_PROMPT_LEN * sizeof(char));
+        free(prompt);
+        prompt = (char *)malloc(MAX_PROMPT_LEN * sizeof(char));
         kill(getppid(), SIGUSR1);  // Notify main process
         !DEBUG ?: puts("[INF] SENT INF READY");
-
-        // Wait for new prompt
-        while (1) {
-            if (new_prompt_ready) break;
-            sched_yield();
-        }
-        !DEBUG ?: puts("[INF] GOT MAIN READY");
-        new_prompt_ready = 0;
     }
-    for (int i = 0; i < prompt_count; i++) free(prompts[i]);
-    kill(getppid(), SIGINT);
+    kill(getppid(), SIGUSR2);  // Notify main process
+    !DEBUG ?: puts("[INF] SENT MAX PROMPT REACHED");
 
-    // Your code ends here
+    cleanup();
 
-    // memory and file handles cleanup
-    free_sampler(&sampler);
-    free_tokenizer(&tokenizer);
-    free_transformer(&transformer);
     return 0;
 }

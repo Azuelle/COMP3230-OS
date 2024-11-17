@@ -40,20 +40,36 @@ typedef struct rusage rusage;
 int num_threads;
 pthread_t* threads;
 
-pthread_cond_t* task_cond;
+pthread_cond_t task_cond;
+sem_t* done_sem;
 
 typedef enum TaskType { MAT_VEC_MUL, MULTI_HEAD_ATTN, TERMINATE } TaskType;
-TaskType* tasks;
+TaskType task;
 
 typedef struct MatVecMulArgs {
+    float* out;
+    QuantizedTensor* mat;
+    QuantizedTensor* vec;
+    int col;
+    int row;
 } MatVecMulArgs;
 typedef struct MultiHeadAttnArgs {
+    float* out;
+    float* q;
+    float* key_cache;
+    float* value_cache;
+    float* att;
+    int seq_len;
+    int n_heads;
+    int head_size;
+    int kv_dim;
+    int kv_mul;
 } MultiHeadAttnArgs;
 typedef union TaskArgs {
     MatVecMulArgs mat_vec_mul_args;
     MultiHeadAttnArgs multi_head_attn_args;
 } TaskArgs;
-TaskArgs* task_args;
+TaskArgs task_args;
 
 rusage* usages;
 
@@ -63,25 +79,113 @@ inline double get_time(struct timeval t) {
 
 // function executed by each thread to complete mat_vec_mul
 // @note: please modify the signature to what you want
-void mat_vec_mul_task_func(int id, MatVecMulArgs args) {}
+void mat_vec_mul_task_func(int id, MatVecMulArgs args) {
+    // extract arguments
+    float* out = args.out;
+    QuantizedTensor* vec = args.vec;
+    QuantizedTensor* mat = args.mat;
+    int col = args.col;
+    int row = args.row;
+
+    // for each row
+    // this thread is responsible for calculating
+    // id*(row/num_threads) to (id+1)*(row/num_threads)
+    int workload = row / num_threads;
+    for (int i = id * workload; i < (id + 1) * workload; i++) {
+        float val = 0.0f;  // final value
+        int32_t ival = 0;  // integer value to be dequantized
+        int in = i * col;  //
+
+        // for each column
+        // GS is group size of quantization, not included in assignment
+        // @note please don't parallel this loop
+        for (int j = 0; j <= col - GS; j += GS) {
+            for (int k = 0; k < GS; k++) {
+                ival +=
+                    ((int32_t)vec->q[j + k]) * ((int32_t)mat->q[in + j + k]);
+            }
+            val += ((float)ival) * mat->s[(in + j) / GS] * vec->s[j / GS];
+            ival = 0;
+        }
+        out[i] = val;
+    }
+
+    sem_post(&done_sem[id]);
+}
 
 // function executed by each thread to complete multi_head_attn
 // @note: please modify the signature to what you want
-void multi_head_attn_task_func(int id, MultiHeadAttnArgs args) {}
+void multi_head_attn_task_func(int id, MultiHeadAttnArgs args) {
+    // extract arguments
+    float* out = args.out;              // output tensor [head, head_size]
+    float* q = args.q;                  // query tensor  [head, head_size]
+    float* key_cache = args.key_cache;  // cache of history key tensor [kv_head,
+                                        // seq_len, head_size]
+    float* value_cache = args.value_cache;  // cache of history value tensor
+                                            // [kv_head, seq_len, head_size]
+    float* att = args.att;       // buffer for attention score [head, seq_len]
+    int seq_len = args.seq_len;  // current sequence length
+    int n_heads = args.n_heads;  // number of heades
+    int head_size = args.head_size;  // size of each head
+    int kv_dim = args.kv_dim;
+    int kv_mul = args.kv_mul;
+
+    // multihead attention. iterate over all heads
+    // this thread is responsible for calculating
+    // id*(n_heads/num_threads) to (id+1)*(n_head/num_threads)
+    int workload = n_heads / num_threads;
+    for (int h = id * workload; h < (id + 1) * workload; h++) {
+        // get the query vector for this head
+        float* head_q = q + h * head_size;
+        // attention scores for this head
+        float* head_att = att + h * seq_len;
+        // iterate over all timesteps, including the current one
+        for (int t = 0; t <= pos; t++) {
+            // get the key vector for this head and at this timestep
+            float* head_k = key_cache + t * kv_dim + (h / kv_mul) * head_size;
+            // calculate the attention score as the dot product of q and k
+            float score = 0.0f;
+            for (int i = 0; i < head_size; i++) {
+                score += head_q[i] * head_k[i];
+            }
+            score /= sqrtf(head_size);
+            // save the score to the attention buffer
+            head_att[t] = score;
+        }
+
+        // softmax the scores to get attention weights, from 0..pos inclusively
+        softmax(head_att, pos + 1);
+
+        // weighted sum of the values, store back into xb
+        float* head_out = out + h * head_size;
+        memset(head_out, 0, head_size * sizeof(float));
+        for (int t = 0; t <= pos; t++) {
+            // get the value vector for this head and at this timestep
+            float* head_v = value_cache + t * kv_dim + (h / kv_mul) * head_size;
+            // get the attention weight for this timestep
+            float a = head_att[t];
+            // accumulate the weighted value into head out
+            for (int i = 0; i < head_size; i++) {
+                head_out[i] += a * head_v[i];
+            }
+        }
+    }
+
+    sem_post(&done_sem[id]);
+}
 
 // thread function used in pthread_create
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
 void* thr_func(void* arg) {
     int id = *(int*)arg;
     while (1) {
-        pthread_cond_wait(&task_cond[id], NULL);
-        switch (tasks[id]) {
+        pthread_cond_wait(&task_cond, NULL);
+        switch (task) {
             case MAT_VEC_MUL:
-                mat_vec_mul_task_func(id, task_args[id].mat_vec_mul_args);
+                mat_vec_mul_task_func(id, task_args.mat_vec_mul_args);
                 break;
             case MULTI_HEAD_ATTN:
-                multi_head_attn_task_func(id,
-                                          task_args[id].multi_head_attn_args);
+                multi_head_attn_task_func(id, task_args.multi_head_attn_args);
                 break;
             case TERMINATE:
                 return getrusage(RUSAGE_THREAD, &usages[id]);
@@ -94,11 +198,11 @@ void* thr_func(void* arg) {
 void init_thr_pool(int num_thr) {
     num_threads = num_thr;
     threads = (pthread_t*)malloc(num_threads * sizeof(pthread_t));
-    task_cond = (pthread_cond_t*)malloc(num_threads * sizeof(pthread_cond_t));
-    tasks = (TaskType*)malloc(num_threads * sizeof(TaskType));
-    task_args = (TaskArgs*)malloc(num_threads * sizeof(TaskArgs));
+    done_sem = (sem_t*)malloc(num_threads * sizeof(sem_t));
+
+    pthread_cond_init(&task_cond, NULL);
     for (int i = 0; i < num_threads; i++) {
-        pthread_cond_init(&task_cond[i], NULL);
+        sem_init(&done_sem[i], 0, 0);
         pthread_create(&threads[i], NULL, thr_func, &i);
     }
 }
@@ -106,18 +210,15 @@ void init_thr_pool(int num_thr) {
 // function to close thread pool
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
 void close_thr_pool() {
+    task = TERMINATE;
+    pthread_cond_broadcast(&task_cond);
     for (int i = 0; i < num_threads; i++) {
-        tasks[i] = TERMINATE;
-        pthread_cond_signal(&task_cond[i]);
         pthread_join(threads[i], NULL);
-        pthread_cond_destroy(&task_cond[i]);
         printf("Thread %d has terminated - user %.4fs, system %.4fs\n", i,
                get_time(usages[i].ru_utime), get_time(usages[i].ru_stime));
     }
+    pthread_cond_destroy(&task_cond);
     free(threads);
-    free(task_cond);
-    free(tasks);
-    free(task_args);
     free(usages);
 
     rusage main_thr_usage;
@@ -135,7 +236,13 @@ void close_thr_pool() {
 // entry function for multi-threading matrix multiplication
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
 void mat_vec_mul(float* out, QuantizedTensor* vec, QuantizedTensor* mat,
-                 int col, int row) {}
+                 int col, int row) {
+    task = MAT_VEC_MUL;
+    MatVecMulArgs args = {out, vec, mat, col, row};
+    task_args.mat_vec_mul_args = args;
+    pthread_cond_broadcast(&task_cond);
+    for (int i = 0; i < num_threads; i++) sem_wait(&done_sem[i]);
+}
 
 // ----------------------------------------------------------------------------
 // entry function for multi-threading multi-head-attention
@@ -148,7 +255,14 @@ void multi_head_attn(float* out,        // output tensor [head, head_size]
                                           // [kv_head, seq_len, head_size]
                      float* att,  // buffer for attention score [head, seq_len]
                      int seq_len, int n_heads, int head_size, int kv_dim,
-                     int kv_mul) {}
+                     int kv_mul) {
+    task = MULTI_HEAD_ATTN;
+    MultiHeadAttnArgs args = {out,     q,       key_cache, value_cache, att,
+                              seq_len, n_heads, head_size, kv_dim,      kv_mul};
+    task_args.multi_head_attn_args = args;
+    pthread_cond_broadcast(&task_cond);
+    for (int i = 0; i < num_threads; i++) sem_wait(&done_sem[i]);
+}
 // YOUR CODE ENDS HERE
 
 // ----------------------------------------------------------------------------

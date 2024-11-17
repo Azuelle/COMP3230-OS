@@ -30,30 +30,106 @@ Sampler sampler;          // sampler instance to be init
 
 // YOUR CODE STARTS HERE
 #include <pthread.h>
-// #include <semaphore.h> // uncomment this line if you use semaphore
+#include <semaphore.h>
 // #include <stdbool.h>   // uncomment this line if you want true / false
 
 // you may define global variables here
 
+typedef struct rusage rusage;
+
+int num_threads;
+pthread_t* threads;
+
+pthread_cond_t* task_cond;
+
+typedef enum TaskType { MAT_VEC_MUL, MULTI_HEAD_ATTN, TERMINATE } TaskType;
+TaskType* tasks;
+
+typedef struct MatVecMulArgs {
+} MatVecMulArgs;
+typedef struct MultiHeadAttnArgs {
+} MultiHeadAttnArgs;
+typedef union TaskArgs {
+    MatVecMulArgs mat_vec_mul_args;
+    MultiHeadAttnArgs multi_head_attn_args;
+} TaskArgs;
+TaskArgs* task_args;
+
+rusage* usages;
+
+inline double get_time(struct timeval t) {
+    return t.tv_sec + t.tv_usec / 1000000.0;
+}
+
 // function executed by each thread to complete mat_vec_mul
 // @note: please modify the signature to what you want
-void mat_vec_mul_task_func(int id) {}
+void mat_vec_mul_task_func(int id, MatVecMulArgs args) {}
 
 // function executed by each thread to complete multi_head_attn
 // @note: please modify the signature to what you want
-void multi_head_attn_task_func(int id) {}
+void multi_head_attn_task_func(int id, MultiHeadAttnArgs args) {}
 
 // thread function used in pthread_create
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
-void* thr_func(void* arg) {}
+void* thr_func(void* arg) {
+    int id = *(int*)arg;
+    while (1) {
+        pthread_cond_wait(&task_cond[id], NULL);
+        switch (tasks[id]) {
+            case MAT_VEC_MUL:
+                mat_vec_mul_task_func(id, task_args[id].mat_vec_mul_args);
+                break;
+            case MULTI_HEAD_ATTN:
+                multi_head_attn_task_func(id,
+                                          task_args[id].multi_head_attn_args);
+                break;
+            case TERMINATE:
+                return getrusage(RUSAGE_THREAD, &usages[id]);
+        }
+    }
+}
 
 // function to initialize thread pool
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
-void init_thr_pool(int num_thr) {}
+void init_thr_pool(int num_thr) {
+    num_threads = num_thr;
+    threads = (pthread_t*)malloc(num_threads * sizeof(pthread_t));
+    task_cond = (pthread_cond_t*)malloc(num_threads * sizeof(pthread_cond_t));
+    tasks = (TaskType*)malloc(num_threads * sizeof(TaskType));
+    task_args = (TaskArgs*)malloc(num_threads * sizeof(TaskArgs));
+    for (int i = 0; i < num_threads; i++) {
+        pthread_cond_init(&task_cond[i], NULL);
+        pthread_create(&threads[i], NULL, thr_func, &i);
+    }
+}
 
 // function to close thread pool
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
-void close_thr_pool() {}
+void close_thr_pool() {
+    for (int i = 0; i < num_threads; i++) {
+        tasks[i] = TERMINATE;
+        pthread_cond_signal(&task_cond[i]);
+        pthread_join(threads[i], NULL);
+        pthread_cond_destroy(&task_cond[i]);
+        printf("Thread %d has terminated - user %.4fs, system %.4fs\n", i,
+               get_time(usages[i].ru_utime), get_time(usages[i].ru_stime));
+    }
+    free(threads);
+    free(task_cond);
+    free(tasks);
+    free(task_args);
+    free(usages);
+
+    rusage main_thr_usage;
+    getrusage(RUSAGE_THREAD, &main_thr_usage);
+    printf("Main thread - user %.4fs, system %.4fs\n",
+           get_time(main_thr_usage.ru_utime),
+           get_time(main_thr_usage.ru_stime));
+    rusage process_usage;
+    getrusage(RUSAGE_SELF, &process_usage);
+    printf("Process - user %.4fs, system %.4fs\n",
+           get_time(process_usage.ru_utime), get_time(process_usage.ru_stime));
+}
 
 // ----------------------------------------------------------------------------
 // entry function for multi-threading matrix multiplication

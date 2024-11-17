@@ -50,8 +50,8 @@ typedef struct MatVecMulArgs {
     int col;
     int row;
     float* out;
-    QuantizedTensor* mat;
     QuantizedTensor* vec;
+    QuantizedTensor* mat;
 } MatVecMulArgs;
 typedef struct MultiHeadAttnArgs {
     int seq_len;

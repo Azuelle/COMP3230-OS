@@ -40,36 +40,33 @@ typedef struct rusage rusage;
 int num_threads;
 pthread_t* threads;
 
-pthread_cond_t task_cond;
+sem_t* task_sem;
 sem_t* done_sem;
 
 typedef enum TaskType { MAT_VEC_MUL, MULTI_HEAD_ATTN, TERMINATE } TaskType;
 TaskType task;
 
 typedef struct MatVecMulArgs {
+    int col;
+    int row;
     float* out;
     QuantizedTensor* mat;
     QuantizedTensor* vec;
-    int col;
-    int row;
 } MatVecMulArgs;
 typedef struct MultiHeadAttnArgs {
-    float* out;
-    float* q;
-    float* key_cache;
-    float* value_cache;
-    float* att;
     int seq_len;
     int n_heads;
     int head_size;
     int kv_dim;
     int kv_mul;
+    float* out;
+    float* q;
+    float* key_cache;
+    float* value_cache;
+    float* att;
 } MultiHeadAttnArgs;
-typedef union TaskArgs {
-    MatVecMulArgs mat_vec_mul_args;
-    MultiHeadAttnArgs multi_head_attn_args;
-} TaskArgs;
-TaskArgs task_args;
+MatVecMulArgs mat_vec_mul_args;
+MultiHeadAttnArgs multi_head_attn_args;
 
 rusage* usages;
 
@@ -109,8 +106,6 @@ void mat_vec_mul_task_func(int id, MatVecMulArgs args) {
         }
         out[i] = val;
     }
-
-    sem_post(&done_sem[id]);
 }
 
 // function executed by each thread to complete multi_head_attn
@@ -170,8 +165,6 @@ void multi_head_attn_task_func(int id, MultiHeadAttnArgs args) {
             }
         }
     }
-
-    sem_post(&done_sem[id]);
 }
 
 // thread function used in pthread_create
@@ -179,17 +172,20 @@ void multi_head_attn_task_func(int id, MultiHeadAttnArgs args) {
 void* thr_func(void* arg) {
     int id = *(int*)arg;
     while (1) {
-        pthread_cond_wait(&task_cond, NULL);
+        sem_wait(&task_sem[id]);
+        fprintf(stderr, "Thread %d is working\n", id);
         switch (task) {
+            case TERMINATE:
+                getrusage(RUSAGE_THREAD, &usages[id]);
+                return NULL;
             case MAT_VEC_MUL:
-                mat_vec_mul_task_func(id, task_args.mat_vec_mul_args);
+                mat_vec_mul_task_func(id, mat_vec_mul_args);
                 break;
             case MULTI_HEAD_ATTN:
-                multi_head_attn_task_func(id, task_args.multi_head_attn_args);
+                multi_head_attn_task_func(id, multi_head_attn_args);
                 break;
-            case TERMINATE:
-                return getrusage(RUSAGE_THREAD, &usages[id]);
         }
+        sem_post(&done_sem[id]);
     }
 }
 
@@ -198,10 +194,11 @@ void* thr_func(void* arg) {
 void init_thr_pool(int num_thr) {
     num_threads = num_thr;
     threads = (pthread_t*)malloc(num_threads * sizeof(pthread_t));
+    task_sem = (sem_t*)malloc(num_threads * sizeof(sem_t));
     done_sem = (sem_t*)malloc(num_threads * sizeof(sem_t));
 
-    pthread_cond_init(&task_cond, NULL);
     for (int i = 0; i < num_threads; i++) {
+        sem_init(&task_sem[i], 0, 0);
         sem_init(&done_sem[i], 0, 0);
         pthread_create(&threads[i], NULL, thr_func, &i);
     }
@@ -211,15 +208,18 @@ void init_thr_pool(int num_thr) {
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
 void close_thr_pool() {
     task = TERMINATE;
-    pthread_cond_broadcast(&task_cond);
     for (int i = 0; i < num_threads; i++) {
+        sem_post(&task_sem[i]);
         pthread_join(threads[i], NULL);
+        sem_destroy(&task_sem[i]);
+        sem_destroy(&done_sem[i]);
         printf("Thread %d has terminated - user %.4fs, system %.4fs\n", i,
                get_time(usages[i].ru_utime), get_time(usages[i].ru_stime));
     }
-    pthread_cond_destroy(&task_cond);
     free(threads);
     free(usages);
+    free(task_sem);
+    free(done_sem);
 
     rusage main_thr_usage;
     getrusage(RUSAGE_THREAD, &main_thr_usage);
@@ -232,16 +232,20 @@ void close_thr_pool() {
            get_time(process_usage.ru_utime), get_time(process_usage.ru_stime));
 }
 
+void broadcast_and_do_task() {
+    for (int i = 0; i < num_threads; i++) sem_post(&task_sem[i]);
+    for (int i = 0; i < num_threads; i++) sem_wait(&done_sem[i]);
+}
+
 // ----------------------------------------------------------------------------
 // entry function for multi-threading matrix multiplication
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
 void mat_vec_mul(float* out, QuantizedTensor* vec, QuantizedTensor* mat,
                  int col, int row) {
+    MatVecMulArgs args = {col, row, out, vec, mat};
+    mat_vec_mul_args = args;
     task = MAT_VEC_MUL;
-    MatVecMulArgs args = {out, vec, mat, col, row};
-    task_args.mat_vec_mul_args = args;
-    pthread_cond_broadcast(&task_cond);
-    for (int i = 0; i < num_threads; i++) sem_wait(&done_sem[i]);
+    broadcast_and_do_task();
 }
 
 // ----------------------------------------------------------------------------
@@ -256,12 +260,11 @@ void multi_head_attn(float* out,        // output tensor [head, head_size]
                      float* att,  // buffer for attention score [head, seq_len]
                      int seq_len, int n_heads, int head_size, int kv_dim,
                      int kv_mul) {
+    MultiHeadAttnArgs args = {seq_len, n_heads, head_size, kv_dim,      kv_mul,
+                              out,     q,       key_cache, value_cache, att};
+    multi_head_attn_args = args;
     task = MULTI_HEAD_ATTN;
-    MultiHeadAttnArgs args = {out,     q,       key_cache, value_cache, att,
-                              seq_len, n_heads, head_size, kv_dim,      kv_mul};
-    task_args.multi_head_attn_args = args;
-    pthread_cond_broadcast(&task_cond);
-    for (int i = 0; i < num_threads; i++) sem_wait(&done_sem[i]);
+    broadcast_and_do_task();
 }
 // YOUR CODE ENDS HERE
 
@@ -458,8 +461,9 @@ int main(int argc, char* argv[]) {
         rng_seed = atoi(argv[2]);
         prompt = argv[3];
     } else {
-        fprintf(stderr, "Usage:   ./seq <num_thr> <seed> <prompt>\n");
-        fprintf(stderr, "Example: ./seq 4 42 \"What is Fibonacci Number?\"\n");
+        fprintf(stderr, "Usage:   ./parallel <num_thr> <seed> <prompt>\n");
+        fprintf(stderr,
+                "Example: ./parallel 4 42 \"What is Fibonacci Number?\"\n");
         fprintf(stderr,
                 "Note:    <prompt> must be quoted with \"\", only one prompt "
                 "supported\n");

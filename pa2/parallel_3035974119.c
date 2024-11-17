@@ -84,7 +84,12 @@ void mat_vec_mul_task_func(int id, MatVecMulArgs args) {
     // this thread is responsible for calculating
     // id*(row/num_threads) to (id+1)*(row/num_threads)
     int workload = row / num_threads;
-    for (int i = id * workload; i < (id + 1) * workload; i++) {
+    int from = id * workload;
+    int to = (id + 1) * workload;
+    if (id == num_threads - 1) to = row;
+    // fprintf(stderr, "Thread %d - Row %d~%d/%d\n", id, from, to, row);
+
+    for (int i = from; i < to; i++) {
         float val = 0.0f;  // final value
         int32_t ival = 0;  // integer value to be dequantized
         int in = i * col;  //
@@ -125,7 +130,12 @@ void multi_head_attn_task_func(int id, MultiHeadAttnArgs args) {
     // this thread is responsible for calculating
     // id*(n_heads/num_threads) to (id+1)*(n_head/num_threads)
     int workload = n_heads / num_threads;
-    for (int h = id * workload; h < (id + 1) * workload; h++) {
+    int from = id * workload;
+    int to = (id + 1) * workload;
+    if (id == num_threads - 1) to = n_heads;
+    // fprintf(stderr, "Thread %d - Head %d~%d/%d\n", id, from, to, n_heads);
+
+    for (int h = from; h < to; h++) {
         // get the query vector for this head
         float* head_q = q + h * head_size;
         // attention scores for this head

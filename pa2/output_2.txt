@@ -1,0 +1,12 @@
+user: What is Fibonacci Number? 
+assistant
+What a fascinating question!
+
+
+The concept of Fibonacci sequence, or the "Fibonacci sequence," is a mathematical concept that describes a series of numbers in which each number is the sum of the two preceding numbers (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,<|im_end|>
+
+[0;32mlength: 266, speed (tok/s): 29.8340 [0m
+[0;32mThread 0 has terminated - user 6.8947 s, system 0.2290 s
+[0;32mThread 1 has terminated - user 6.8325 s, system 0.0443 s
+Main thread - user 0.4020s, system 0.5446s
+Process - user 14.2150s, system 0.7323s[0m

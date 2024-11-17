@@ -1,0 +1,17 @@
+user: What is Fibonacci Number? 
+physicistsAHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH<|im_end|>m
+[0;32mlength: 266, speed (tok/s): 30.6982 [0m
+[0;32mThread 0 has terminated - user 1.5216 s, system 0.2106 s
+[0;32mThread 1 has terminated - user 1.5740 s, system 0.0742 s
+[0;32mThread 2 has terminated - user 1.6195 s, system 0.0968 s
+[0;32mThread 3 has terminated - user 2.1272 s, system 0.3373 s
+[0;32mThread 4 has terminated - user 1.9102 s, system 0.1838 s
+[0;32mThread 5 has terminated - user 1.7517 s, system 0.1313 s
+[0;32mThread 6 has terminated - user 1.5714 s, system 0.0894 s
+[0;32mThread 7 has terminated - user 1.2305 s, system 0.0869 s
+[0;32mThread 8 has terminated - user 1.2238 s, system 0.0719 s
+[0;32mThread 9 has terminated - user 1.1930 s, system 0.0864 s
+[0;32mThread 10 has terminated - user 1.1591 s, system 0.1882 s
+[0;32mThread 11 has terminated - user 1.2397 s, system 0.1022 s
+Main thread - user 0.4544s, system 2.6975s
+Process - user 18.6499s, system 4.2828s[0m

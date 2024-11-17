@@ -6,7 +6,7 @@
  * Development Platform: gcc version 10.2.1
  *                       Debian 10.2.1-6
  *                       (in Docker container on macOS)
- * Remark: (How much you implemented?)
+ * Remark: (How much you implemented?) Everything
  * How to compile separately:
  *      gcc -o parallel parallel_3035974119.c -O2 -lm -lpthread
  */

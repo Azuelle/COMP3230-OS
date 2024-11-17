@@ -70,10 +70,6 @@ MultiHeadAttnArgs multi_head_attn_args;
 
 rusage* usages;
 
-inline double get_time(struct timeval t) {
-    return t.tv_sec + t.tv_usec / 1000000.0;
-}
-
 // function executed by each thread to complete mat_vec_mul
 // @note: please modify the signature to what you want
 void mat_vec_mul_task_func(int id, MatVecMulArgs args) {
@@ -171,13 +167,19 @@ void multi_head_attn_task_func(int id, MultiHeadAttnArgs args) {
 // @note: YOU CAN NOT MODIFY this FUNCTION SIGNATURE!!!
 void* thr_func(void* arg) {
     int id = *(int*)arg;
+    // fprintf(stderr, "Hi from %d\n", id);
+    sem_post(&done_sem[id]);  // signal ready
+
     while (1) {
         sem_wait(&task_sem[id]);
-        fprintf(stderr, "Thread %d is working\n", id);
+        // fprintf(stderr, "Thread %d is working\n", id);
         switch (task) {
             case TERMINATE:
                 getrusage(RUSAGE_THREAD, &usages[id]);
+                // fprintf(stderr, "Bye from %d\n", id);
+                sem_post(&done_sem[id]);
                 return NULL;
+
             case MAT_VEC_MUL:
                 mat_vec_mul_task_func(id, mat_vec_mul_args);
                 break;
@@ -194,14 +196,21 @@ void* thr_func(void* arg) {
 void init_thr_pool(int num_thr) {
     num_threads = num_thr;
     threads = (pthread_t*)malloc(num_threads * sizeof(pthread_t));
+    usages = (rusage*)malloc(num_threads * sizeof(rusage));
     task_sem = (sem_t*)malloc(num_threads * sizeof(sem_t));
     done_sem = (sem_t*)malloc(num_threads * sizeof(sem_t));
 
     for (int i = 0; i < num_threads; i++) {
         sem_init(&task_sem[i], 0, 0);
         sem_init(&done_sem[i], 0, 0);
+        // fprintf(stderr, "Initialized sems for thread %d\n", i);
         pthread_create(&threads[i], NULL, thr_func, &i);
+        sem_wait(&done_sem[i]);  // wait for thread to be ready
     }
+}
+
+inline double get_time(struct timeval t) {
+    return t.tv_sec + t.tv_usec / 1000000.0;
 }
 
 // function to close thread pool
@@ -211,10 +220,14 @@ void close_thr_pool() {
     for (int i = 0; i < num_threads; i++) {
         sem_post(&task_sem[i]);
         pthread_join(threads[i], NULL);
+        sem_wait(&done_sem[i]);
+
+        printf(
+            "\033[0;32mThread %d has terminated - user %.4f s, system %.4f s\n",
+            i, get_time(usages[i].ru_utime), get_time(usages[i].ru_stime));
+
         sem_destroy(&task_sem[i]);
         sem_destroy(&done_sem[i]);
-        printf("Thread %d has terminated - user %.4fs, system %.4fs\n", i,
-               get_time(usages[i].ru_utime), get_time(usages[i].ru_stime));
     }
     free(threads);
     free(usages);
@@ -228,13 +241,16 @@ void close_thr_pool() {
            get_time(main_thr_usage.ru_stime));
     rusage process_usage;
     getrusage(RUSAGE_SELF, &process_usage);
-    printf("Process - user %.4fs, system %.4fs\n",
+    printf("Process - user %.4fs, system %.4fs\033[0m\n",
            get_time(process_usage.ru_utime), get_time(process_usage.ru_stime));
 }
 
 void broadcast_and_do_task() {
+    // fprintf(stderr, "Broadcasting task\n");
     for (int i = 0; i < num_threads; i++) sem_post(&task_sem[i]);
+    // fprintf(stderr, "Waiting for threads to finish\n");
     for (int i = 0; i < num_threads; i++) sem_wait(&done_sem[i]);
+    // fprintf(stderr, "Finished\n");
 }
 
 // ----------------------------------------------------------------------------
